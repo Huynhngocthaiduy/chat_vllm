@@ -5,7 +5,7 @@ from llm_chains import load_normal_chain, load_pdf_chat_chain
 from utils import get_timestamp, load_config, get_avatar
 from langchain.chains import LLMChain
 from pydantic.v1 import BaseSettings
-from pdf_handler import add_documents_to_db
+from pdf_handler import add_documents_to_db,extract_text_from_pdf
 from html_templates import css
 from database_operations import load_last_k_text_messages, save_text_message, load_messages, get_all_chat_history_ids, delete_chat_history
 import sqlite3
@@ -37,7 +37,10 @@ def delete_chat_session_history():
 
 def clear_cache():
     st.cache_resource.clear()
-
+def split_questions(text):
+    questions = text.split('?')
+    questions = [q.strip() + '?' for q in questions if q.strip()]  # Add back the question mark and remove empty strings
+    return questions
 def main():
     #st.title("Chat with Pole Star")
     st.write(css, unsafe_allow_html=True)
@@ -48,6 +51,7 @@ def main():
         st.session_state.session_index_tracker = "new_session"
         st.session_state.db_conn = sqlite3.connect(config["chat_sessions_database_path"], check_same_thread=False)
         st.session_state.pdf_uploader_key = 1
+        st.session_state.question_uploader_key = 0
     if st.session_state.session_key == "new_session" and st.session_state.new_session_key != None:
         st.session_state.session_index_tracker = st.session_state.new_session_key
         st.session_state.new_session_key = None
@@ -68,32 +72,73 @@ def main():
     user_input = st.chat_input("Type your message here", key="user_input")
     uploaded_pdf = st.sidebar.file_uploader("Upload a pdf file", accept_multiple_files=True, 
                                             key=st.session_state.pdf_uploader_key, type=["pdf"], on_change=toggle_pdf_chat)
-
+    
+    questions_uploaded = st.sidebar.file_uploader("Upload your questions", key="question_uploaded",on_change=toggle_pdf_chat) 
+                                            
     if uploaded_pdf:
         with st.spinner("Processing pdf..."):
-            add_documents_to_db(uploaded_pdf)
+            vector_db = add_documents_to_db(uploaded_pdf)
             st.session_state.pdf_uploader_key += 2 
    
+    if questions_uploaded:
+        with st.spinner("Processing to reponse your question..."):
+            text = extract_text_from_pdf(questions_uploaded)
+            questions = split_questions(text)
+            llm_chain = load_chain()
+            print("We are here_____________________________")
+            while questions:
+                question = questions[0]
+                questionS = questions.pop(0)
+                #print(question +"-------------")
+                llm_answer = llm_chain.run(user_input = question, 
+                                    chat_history=load_last_k_text_messages(get_session_key(), config["chat_config"]["chat_memory_length"]))
+                            
+                
+                save_text_message(get_session_key(), "human", question)
+                save_text_message(get_session_key(), "ai", llm_answer)
+                
+                if (st.session_state.session_key != "new_session") != (st.session_state.new_session_key != None):
+                 with chat_container:
+                    chat_history_messages = load_messages(get_session_key())
+                    for message in chat_history_messages:
+                        with st.chat_message(name=message["sender_type"], avatar=get_avatar(message["sender_type"])):
+                            if message["message_type"] == "text":
+                                st.write(message["content"] )
+                
+        questions_uploaded = None
+        #st.session_state.question_uploader_key += 2
          
+                
 
 
-    if user_input:
+    if user_input :
+        print("if we are here")
         start_time =time.time()
         llm_chain = load_chain()
         llm_answer = llm_chain.run(user_input = user_input, 
                                     chat_history=load_last_k_text_messages(get_session_key(), config["chat_config"]["chat_memory_length"]))
         end_time = time.time()
         response_time = end_time - start_time
-        llm_answer = llm_answer + f" --Response Time: {response_time:.2f} seconds--"
+        #llm_answer = llm_answer + f" --Response Time: {response_time:.2f} seconds--"
         save_text_message(get_session_key(), "human", user_input)
         save_text_message(get_session_key(), "ai", llm_answer)
+        if (st.session_state.session_key != "new_session") != (st.session_state.new_session_key != None):
+            with chat_container:
+                chat_history_messages = load_messages(get_session_key())
+                for message in chat_history_messages:
+                    with st.chat_message(name=message["sender_type"], avatar=get_avatar(message["sender_type"])):
+                        if message["message_type"] == "text":
+                            st.write(message["content"] )
+            
         user_input = None
 
+    if (st.session_state.session_key == "new_session") and (st.session_state.new_session_key != None):
+                    st.rerun() 
 
-    if (st.session_state.session_key != "new_session") != (st.session_state.new_session_key != None):
+    if (st.session_state.session_key != "new_session") != (st.session_state.new_session_key != None) and (0 == 1):
         with chat_container:
+            print("we are in mode input")
             chat_history_messages = load_messages(get_session_key())
-
             for message in chat_history_messages:
                 with st.chat_message(name=message["sender_type"], avatar=get_avatar(message["sender_type"])):
                     if message["message_type"] == "text":

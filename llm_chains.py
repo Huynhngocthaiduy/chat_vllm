@@ -3,8 +3,8 @@ print("Python executable:", sys.executable)
 print("Python version:", sys.version)
 print("System path:", sys.path)
 
-
-from prompt_templates import memory_prompt_template, pdf_chat_prompt
+from chromadb.config import DEFAULT_TENANT, DEFAULT_DATABASE, Settings
+from prompt_templates import memory_prompt_template, pdf_chat_prompt, memory_prompt_template_mistral
 from langchain.chains import LLMChain
 from langchain.chains.retrieval_qa.base import RetrievalQA
 from langchain_community.embeddings import HuggingFaceInstructEmbeddings
@@ -39,8 +39,9 @@ def create_llm(model_path = config["ctransformers"]["model_path"]["large"], mode
 def create_llm_vllm():
     llm_q = VLLM(
         #model="TheBloke/Llama-2-7b-Chat-AWQ",
-        model="TheBloke/Llama-2-13B-AWQ",
-        #model="TheBloke/Mistral-7B-Instruct-v0.2-AWQ",
+        #model="openai-community/gpt2",
+        #model="TheBloke/Llama-2-13B-AWQ",
+        model="TheBloke/Mistral-7B-Instruct-v0.2-AWQ",
         trust_remote_code=True,
         max_new_tokens=512,
         vllm_kwargs={"quantization": "awq"},
@@ -62,8 +63,8 @@ def load_normal_chain():
     return chatChain()
 
 def load_vectordb(embeddings):
+    
     persistent_client = chromadb.PersistentClient(config["chromadb"]["chromadb_path"])
-
     langchain_chroma = Chroma(
         client=persistent_client,
         collection_name=config["chromadb"]["collection_name"],
@@ -107,8 +108,9 @@ class chatChain:
     def __init__(self):
         llm = create_llm_vllm()
         #llm = load_ollama_model()
-        chat_prompt = create_prompt_from_template(memory_prompt_template)
+        chat_prompt = create_prompt_from_template(memory_prompt_template_mistral)
         self.llm_chain = create_llm_chain(llm, chat_prompt)
 
     def run(self, user_input, chat_history):
+        #return self.llm_chain.invoke(input={"human_input" : user_input, "history" : chat_history} ,stop=["Human:"])["text"]
         return self.llm_chain.invoke(input={"human_input" : user_input, "history" : chat_history} ,stop=["Human:"])["text"]

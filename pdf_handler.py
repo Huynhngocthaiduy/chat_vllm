@@ -28,6 +28,12 @@ def get_document_chunks(text_list):
 def add_documents_to_db(pdfs_bytes):
     texts = get_pdf_texts(pdfs_bytes)
     documents = get_document_chunks(texts)
-    vector_db = load_vectordb(create_embeddings())
+    vector_db = load_vectordb(create_embeddings())    
+    for collection in vector_db._client.list_collections():
+        ids = collection.get()['ids']
+        print('REMOVE %s document(s) from %s collection' % (str(len(ids)), collection.name))
+        print("--------------------------------")
+        if len(ids): collection.delete(ids)
     vector_db.add_documents(documents)
     print("Documents added to db.")
+    return vector_db
